@@ -14,6 +14,7 @@ val hasReleaseKeystore = !keystorePath.isNullOrBlank() && file(keystorePath).exi
 android {
     namespace = "com.teena.assistant"
     compileSdk = 35
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.teena.assistant"
