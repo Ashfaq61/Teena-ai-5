@@ -149,7 +149,7 @@ fun TeenaVoiceOrb(
     }
 
     val stateLabel = when (state) {
-        is VoiceOrbState.Unavailable -> "NOT IMPLEMENTED"
+        is VoiceOrbState.Unavailable -> "BLOCKED"
         is VoiceOrbState.Idle -> "STANDBY"
         is VoiceOrbState.Connecting -> "CONNECTING"
         is VoiceOrbState.Listening -> "LISTENING"

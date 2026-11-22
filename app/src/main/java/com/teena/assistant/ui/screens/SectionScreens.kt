@@ -1,25 +1,34 @@
 package com.teena.assistant.ui.screens
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.teena.assistant.core.model.FeatureStatus
 import com.teena.assistant.ui.components.FeatureStatusBadge
 import com.teena.assistant.ui.components.KeyValueRow
 import com.teena.assistant.ui.components.TeenaCard
-import com.teena.assistant.ui.components.TeenaVoiceOrb
-import com.teena.assistant.ui.components.VoiceOrbState
 import com.teena.assistant.ui.navigation.TeenaDestination
 import com.teena.assistant.ui.theme.TeenaColors
 import com.teena.assistant.ui.viewmodel.TeenaUiState
@@ -49,7 +58,7 @@ fun AboutScreen(
                     FeatureStatusBadge(status = FeatureStatus.IMPLEMENTED_NOT_DEVICE_VERIFIED)
                 }
                 Text(
-                    text = "Fresh Kotlin + Jetpack Compose build with Hilt, Room, WorkManager, and RTL layout support.",
+                    text = "Fresh Kotlin + Jetpack Compose build with Hilt, Room v2, WorkManager, EncryptedSharedPreferences, ModelRegistry, and Gemini Live WebSocket voice.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TeenaColors.TextSecondary
                 )
@@ -79,9 +88,9 @@ fun AboutScreen(
                 )
                 Text(
                     text = "• Package ID is permanently fixed to com.teena.assistant.\n" +
-                        "• Release APKs are signed via GitHub Actions using secrets only.\n" +
-                        "• If an older TEENA APK with a different signature is installed, uninstall it before installing the first fresh release.\n" +
-                        "• Never lose the release keystore backup—in-place updates require the same signing certificate.",
+                        "• Release APKs are built by GitHub Actions.\n" +
+                        "• Permanent keystore secrets preserve in-place updates; temporary runner keys require uninstall/reinstall.\n" +
+                        "• Never lose the release keystore backup.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TeenaColors.TextSecondary
                 )
@@ -90,18 +99,41 @@ fun AboutScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PermissionsScreen(
     uiState: TeenaUiState,
+    onRefreshPermissions: () -> Unit,
+    onOpenAppDetails: () -> Unit,
+    onOpenBatteryOptimization: () -> Unit,
+    onOpenColorOsAutoStart: () -> Unit,
+    onOpenAccessibilitySettings: () -> Unit,
+    onOpenNotificationListenerSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val upcomingPermissions = listOf(
-        "RECORD_AUDIO + FOREGROUND_SERVICE_MICROPHONE" to "Phase 3 — Gemini Live bidirectional voice",
+    val perms = uiState.permissionState
+
+    val micLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        onRefreshPermissions()
+    }
+
+    val notificationLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) {
+        onRefreshPermissions()
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        onRefreshPermissions()
+    }
+
+    val scheduledPermissions = listOf(
         "CAMERA + FOREGROUND_SERVICE_CAMERA" to "Phase 6 — CameraX photo/video understanding",
-        "AccessibilityService + Restricted Settings Guide" to "Phase 5 — Screen vision & UI automation",
+        "AccessibilityService" to "Phase 5 — Screen vision & verified UI automation",
         "NotificationListenerService" to "Phase 6 — Notification triage & authorized replies",
-        "ROLE_DIALER / ROLE_CALL_SCREENING" to "Phase 6 — Telecom call handling",
-        "ColorOS Auto-Start & Battery Optimization Deep Links" to "Phase 4 — Oppo F15 background survival"
+        "ROLE_DIALER / ROLE_CALL_SCREENING" to "Phase 6 — Telecom call handling"
     )
 
     LazyColumn(
@@ -117,21 +149,25 @@ fun PermissionsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Manifest Permissions (Live Check)",
+                        text = "Runtime Permissions (Live Check)",
                         style = MaterialTheme.typography.titleLarge,
-                        color = TeenaColors.TextPrimary
+                        color = TeenaColors.TextPrimary,
+                        modifier = Modifier.weight(1f)
                     )
                     FeatureStatusBadge(status = FeatureStatus.IMPLEMENTED_NOT_DEVICE_VERIFIED)
                 }
                 Text(
-                    text = "Only permissions required by active Phase 1 components are declared in AndroidManifest.xml.",
+                    text = "Only active Phase 1–4 permissions are requested. Every permission below shows real live status from Android PackageManager/PowerManager.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TeenaColors.TextSecondary
                 )
+                OutlinedButton(onClick = onRefreshPermissions) {
+                    Text("Re-check Live Status")
+                }
             }
         }
 
-        items(uiState.declaredPermissions, key = { it.permissionName }) { perm ->
+        item {
             TeenaCard {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -139,12 +175,12 @@ fun PermissionsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = perm.permissionName.substringAfterLast('.'),
+                        text = "Microphone (RECORD_AUDIO)",
                         style = MaterialTheme.typography.titleMedium,
                         color = TeenaColors.TextPrimary
                     )
                     FeatureStatusBadge(
-                        status = if (perm.granted) {
+                        status = if (perms.recordAudioGranted) {
                             FeatureStatus.IMPLEMENTED_NOT_DEVICE_VERIFIED
                         } else {
                             FeatureStatus.BLOCKED
@@ -152,14 +188,81 @@ fun PermissionsScreen(
                     )
                 }
                 Text(
-                    text = perm.purpose,
+                    text = "Required for Gemini Live 16kHz bidirectional voice streaming and foreground microphone service.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TeenaColors.TextSecondary
                 )
+                if (!perms.recordAudioGranted) {
+                    Button(
+                        onClick = { micLauncher.launch(Manifest.permission.RECORD_AUDIO) },
+                        colors = ButtonDefaults.buttonColors(containerColor = TeenaColors.Cyan)
+                    ) {
+                        Text("Grant Microphone", color = TeenaColors.Void)
+                    }
+                }
+            }
+        }
+
+        item {
+            TeenaCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Notifications (POST_NOTIFICATIONS)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TeenaColors.TextPrimary
+                    )
+                    FeatureStatusBadge(
+                        status = if (perms.postNotificationsGranted) {
+                            FeatureStatus.IMPLEMENTED_NOT_DEVICE_VERIFIED
+                        } else {
+                            FeatureStatus.BLOCKED
+                        }
+                    )
+                }
                 Text(
-                    text = "${if (perm.granted) "GRANTED" else "DENIED"} • ${perm.phaseNote}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TeenaColors.Cyan
+                    text = "Required on Android 13+ so the active Gemini Live microphone service notification (Mute / Stop) stays visible.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TeenaColors.TextSecondary
+                )
+                if (!perms.postNotificationsGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    Button(
+                        onClick = { notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                        colors = ButtonDefaults.buttonColors(containerColor = TeenaColors.Cyan)
+                    ) {
+                        Text("Grant Notifications", color = TeenaColors.Void)
+                    }
+                }
+            }
+        }
+
+        item {
+            TeenaCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Internet Access (INTERNET)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = TeenaColors.TextPrimary
+                    )
+                    FeatureStatusBadge(
+                        status = if (perms.internetGranted) {
+                            FeatureStatus.IMPLEMENTED_NOT_DEVICE_VERIFIED
+                        } else {
+                            FeatureStatus.BLOCKED
+                        }
+                    )
+                }
+                Text(
+                    text = "Required for Gemini, Groq, and OpenRouter model discovery, streaming chat, and Gemini Live WebSocket.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TeenaColors.TextSecondary
                 )
             }
         }
@@ -172,13 +275,104 @@ fun PermissionsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Scheduled Permissions (Phases 3–6)",
+                        text = "Oppo F15 / ColorOS Background Survival",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = TeenaColors.TextPrimary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    FeatureStatusBadge(
+                        status = if (perms.batteryOptimizationIgnored) {
+                            FeatureStatus.IMPLEMENTED_NOT_DEVICE_VERIFIED
+                        } else {
+                            FeatureStatus.PARTIAL
+                        }
+                    )
+                }
+                KeyValueRow(
+                    "Battery Optimization",
+                    if (perms.batteryOptimizationIgnored) "UNRESTRICTED" else "OPTIMIZED (MAY KILL LIVE AUDIO)"
+                )
+                KeyValueRow(
+                    "ColorOS / Oplus OEM",
+                    if (perms.isColorOsOem) "Detected" else "Standard Android"
+                )
+                Text(
+                    text = "ColorOS kills background services unless TEENA AI is allowed Auto-Start and unrestricted battery usage:\n" +
+                        "1. Allow Battery Optimization exemption ('Don't optimize' / 'Allow background activity').\n" +
+                        "2. Enable Auto-Start in ColorOS Phone Manager / Startup Manager.\n" +
+                        "3. Optional: Lock TEENA AI in Recents (swipe down or tap lock icon).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TeenaColors.TextSecondary
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onOpenBatteryOptimization,
+                        colors = ButtonDefaults.buttonColors(containerColor = TeenaColors.Cyan)
+                    ) {
+                        Text("Battery Exemption", color = TeenaColors.Void)
+                    }
+                    OutlinedButton(onClick = onOpenColorOsAutoStart) {
+                        Text("ColorOS Auto-Start")
+                    }
+                }
+            }
+        }
+
+        item {
+            TeenaCard {
+                Text(
+                    text = "Android 13+ Restricted Settings Guide (Sideloaded APK)",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TeenaColors.TextPrimary
+                )
+                Text(
+                    text = if (perms.restrictedSettingsApplies) {
+                        "Your device runs Android 13+. Because APKs installed outside Play Store trigger Restricted Settings for Accessibility and Notification Listener:\n" +
+                            "1. Tap 'Open App Info' below.\n" +
+                            "2. Tap the 3-dot menu (⋮) in the top-right corner.\n" +
+                            "3. Tap 'Allow restricted settings' and confirm with PIN/fingerprint.\n" +
+                            "4. Return here and enable Accessibility or Notification access when Phase 5–6 services ship."
+                    } else {
+                        "Your Android version (${uiState.telemetry.androidRelease}, SDK ${uiState.telemetry.sdkInt}) does not enforce Android 13+ sideloaded Restricted Settings."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TeenaColors.TextSecondary
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = onOpenAppDetails) {
+                        Text("Open App Info")
+                    }
+                    OutlinedButton(onClick = onOpenAccessibilitySettings) {
+                        Text("Accessibility Settings")
+                    }
+                    OutlinedButton(onClick = onOpenNotificationListenerSettings) {
+                        Text("Notification Access")
+                    }
+                }
+            }
+        }
+
+        item {
+            TeenaCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Scheduled Permissions (Phases 5–6)",
                         style = MaterialTheme.typography.titleLarge,
                         color = TeenaColors.TextPrimary
                     )
                     FeatureStatusBadge(status = FeatureStatus.NOT_IMPLEMENTED)
                 }
-                upcomingPermissions.forEach { (perm, note) ->
+                scheduledPermissions.forEach { (perm, note) ->
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             text = perm,
@@ -222,7 +416,7 @@ fun ApkBuildScreen(
                     FeatureStatusBadge(status = FeatureStatus.PARTIAL)
                 }
                 Text(
-                    text = "GitHub Actions CI (.github/workflows/android-ci.yml) runs unit tests, Android Lint, signed release APK builds, apksigner verification, SHA-256 checksums, and GitHub Release publishing. In-app GitHub Release polling & update verification is scheduled for Phase 9.",
+                    text = "GitHub Actions CI (.github/workflows/android-ci.yml) runs assembleDebug, unit tests, Android Lint, signed release APK builds, SHA-256 checksums, and GitHub Release publishing. In-app GitHub Release polling & update verification is scheduled for Phase 9.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TeenaColors.TextSecondary
                 )
@@ -282,23 +476,6 @@ fun SectionStatusScreen(
                 )
                 KeyValueRow("Route", destination.route)
                 KeyValueRow("Scheduled Implementation", "Phase ${destination.targetPhase}")
-            }
-        }
-
-        if (destination == TeenaDestination.LIVE_VOICE) {
-            item {
-                TeenaCard {
-                    Column(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        TeenaVoiceOrb(
-                            state = VoiceOrbState.Unavailable(
-                                "Blocked / Not Implemented: Gemini Live WebSocket engine, AudioRecord/AudioTrack 16k/24k PCM pipeline, and ModelRegistry bidiGenerateContent discovery will be built in Phases 2–3."
-                            )
-                        )
-                    }
-                }
             }
         }
 

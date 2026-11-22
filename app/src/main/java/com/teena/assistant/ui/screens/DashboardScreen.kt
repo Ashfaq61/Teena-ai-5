@@ -2,6 +2,8 @@ package com.teena.assistant.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -9,9 +11,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Warning
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -19,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.teena.assistant.core.model.FeatureSpec
 import com.teena.assistant.core.model.FeatureStatus
+import com.teena.assistant.core.voice.LiveVoiceState
 import com.teena.assistant.ui.components.FeatureStatusBadge
 import com.teena.assistant.ui.components.KeyValueRow
 import com.teena.assistant.ui.components.TeenaCard
@@ -31,12 +39,26 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun DashboardScreen(
     uiState: TeenaUiState,
     onNavigate: (TeenaDestination) -> Unit,
+    onEmergencyStop: () -> Unit,
+    onClearEmergencyStop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val orbState = when (val voice = uiState.liveVoiceState) {
+        is LiveVoiceState.Blocked -> VoiceOrbState.Unavailable(voice.reason)
+        is LiveVoiceState.Idle -> VoiceOrbState.Idle
+        is LiveVoiceState.Connecting -> VoiceOrbState.Connecting
+        is LiveVoiceState.Listening -> VoiceOrbState.Listening
+        is LiveVoiceState.Thinking -> VoiceOrbState.Thinking
+        is LiveVoiceState.Speaking -> VoiceOrbState.Speaking
+        is LiveVoiceState.Reconnecting -> VoiceOrbState.Connecting
+        is LiveVoiceState.Error -> VoiceOrbState.Error(voice.message)
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -55,32 +77,124 @@ fun DashboardScreen(
                         color = TeenaColors.TextPrimary
                     )
                     Text(
-                        text = "Phase 1 Scaffold • Honest Subsystem Telemetry",
+                        text = "Phases 1–4 Implemented (Not Device-Verified on Oppo F15)",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TeenaColors.TextSecondary
                     )
                     TeenaVoiceOrb(
-                        state = VoiceOrbState.Unavailable(
-                            "Gemini Live voice engine is NOT IMPLEMENTED yet (scheduled for Phase 3)."
-                        ),
+                        state = orbState,
                         modifier = Modifier.padding(top = 8.dp)
                     )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onNavigate(TeenaDestination.LIVE_VOICE) },
+                            colors = ButtonDefaults.buttonColors(containerColor = TeenaColors.Cyan)
+                        ) {
+                            Text("Open Live Voice", color = TeenaColors.Void)
+                        }
+                        OutlinedButton(onClick = { onNavigate(TeenaDestination.CHAT) }) {
+                            Text("Open AI Chat")
+                        }
+                        OutlinedButton(onClick = { onNavigate(TeenaDestination.API_MANAGER) }) {
+                            Text("API Manager")
+                        }
+                    }
                 }
             }
         }
 
         item {
             TeenaCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.Warning,
+                            contentDescription = null,
+                            tint = if (uiState.emergencyStopped) TeenaColors.Rose else TeenaColors.Amber
+                        )
+                        Text(
+                            text = if (uiState.emergencyStopped) "Emergency Stop ACTIVE" else "Safety & Kill Switch",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = if (uiState.emergencyStopped) TeenaColors.Rose else TeenaColors.TextPrimary
+                        )
+                    }
+                    if (uiState.emergencyStopped) {
+                        OutlinedButton(onClick = onClearEmergencyStop) {
+                            Text("Resume Ready")
+                        }
+                    } else {
+                        Button(
+                            onClick = onEmergencyStop,
+                            colors = ButtonDefaults.buttonColors(containerColor = TeenaColors.Rose)
+                        ) {
+                            Text("Emergency Stop")
+                        }
+                    }
+                }
                 Text(
-                    text = "Live Provider & Agent Telemetry",
+                    text = if (uiState.emergencyStopped) {
+                        "All Gemini Live voice sessions and automation loops are halted until you tap Resume Ready or start a new session."
+                    } else {
+                        "Halts Gemini Live WebSocket audio, foreground mic service, and pending automation loops immediately."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TeenaColors.TextSecondary
+                )
+            }
+        }
+
+        item {
+            TeenaCard {
+                Text(
+                    text = "Live Provider & Model Telemetry",
                     style = MaterialTheme.typography.titleLarge,
                     color = TeenaColors.TextPrimary
                 )
-                KeyValueRow("Connected Providers", "0 (Phase 2)")
-                KeyValueRow("Active Chat Model", "None — ModelRegistry Phase 2")
-                KeyValueRow("Active Live Voice Model", "None — Gemini Live Phase 3")
+                KeyValueRow("Connected Providers", uiState.connectedProviderCount.toString())
+                KeyValueRow("Active Chat Model", uiState.activeChatModel)
+                KeyValueRow("Active Live Voice Model", uiState.activeLiveModel)
+                KeyValueRow("Active Vision Model", uiState.activeVisionModel)
+                KeyValueRow("Active Embeddings Model", uiState.activeEmbeddingsModel)
                 KeyValueRow("Working Agents", "0 / 17 (Phase 7)")
-                KeyValueRow("Verified Tools", "0 (Phase 7)")
+            }
+        }
+
+        item {
+            TeenaCard {
+                Text(
+                    text = "Oppo F15 / Runtime Readiness",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = TeenaColors.TextPrimary
+                )
+                KeyValueRow(
+                    "Microphone (RECORD_AUDIO)",
+                    if (uiState.permissionState.recordAudioGranted) "GRANTED" else "DENIED"
+                )
+                KeyValueRow(
+                    "Notifications (POST_NOTIFICATIONS)",
+                    if (uiState.permissionState.postNotificationsGranted) "GRANTED" else "DENIED"
+                )
+                KeyValueRow(
+                    "Battery Optimization",
+                    if (uiState.permissionState.batteryOptimizationIgnored) "UNRESTRICTED" else "OPTIMIZED (ACTION NEEDED)"
+                )
+                KeyValueRow(
+                    "ColorOS / Oplus Device",
+                    if (uiState.permissionState.isColorOsOem) "Detected" else "Standard Android"
+                )
+                OutlinedButton(onClick = { onNavigate(TeenaDestination.PERMISSIONS) }) {
+                    Text("Manage Permissions & ColorOS Guides")
+                }
             }
         }
 
@@ -211,7 +325,7 @@ fun resolveSectionStatus(
     destination: TeenaDestination,
     matchingFeatures: List<FeatureSpec>
 ): FeatureStatus {
-    if (destination == TeenaDestination.ABOUT) {
+    if (destination == TeenaDestination.ABOUT || destination == TeenaDestination.SETTINGS) {
         return FeatureStatus.IMPLEMENTED_NOT_DEVICE_VERIFIED
     }
     if (matchingFeatures.isEmpty()) {

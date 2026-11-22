@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Menu
+import androidx.compose.material.icons.rounded.StopCircle
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -45,10 +46,16 @@ import com.teena.assistant.BuildConfig
 import com.teena.assistant.ui.navigation.DestinationGroup
 import com.teena.assistant.ui.navigation.TeenaDestination
 import com.teena.assistant.ui.screens.AboutScreen
+import com.teena.assistant.ui.screens.ApiManagerScreen
 import com.teena.assistant.ui.screens.ApkBuildScreen
+import com.teena.assistant.ui.screens.ChatScreen
 import com.teena.assistant.ui.screens.DashboardScreen
+import com.teena.assistant.ui.screens.LiveVoiceScreen
+import com.teena.assistant.ui.screens.MemoryHistoryScreen
+import com.teena.assistant.ui.screens.OnboardingScreen
 import com.teena.assistant.ui.screens.PermissionsScreen
 import com.teena.assistant.ui.screens.SectionStatusScreen
+import com.teena.assistant.ui.screens.SettingsScreen
 import com.teena.assistant.ui.theme.TeenaColors
 import com.teena.assistant.ui.viewmodel.DashboardViewModel
 import kotlinx.coroutines.launch
@@ -59,6 +66,19 @@ fun TeenaAppShell(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    if (!uiState.onboardingCompleted) {
+        OnboardingScreen(
+            uiState = uiState,
+            onRefreshPermissions = viewModel::refreshDevicePermissions,
+            onOpenBatteryOptimization = { viewModel.openBatteryOptimizationSettings() },
+            onOpenColorOsAutoStart = { viewModel.openColorOsAutoStart() },
+            onOpenAppDetails = { viewModel.openAppDetailsSettings() },
+            onCompleteOnboarding = viewModel::completeOnboarding
+        )
+        return
+    }
+
     val navController = rememberNavController()
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
@@ -171,9 +191,13 @@ fun TeenaAppShell(
                                 color = TeenaColors.TextPrimary
                             )
                             Text(
-                                text = "Phase 1 Scaffold",
+                                text = if (uiState.emergencyStopped) {
+                                    "EMERGENCY STOP ENGAGED"
+                                } else {
+                                    "Phase 1–4 Build • ${uiState.connectedProviderCount} provider(s)"
+                                },
                                 style = MaterialTheme.typography.labelSmall,
-                                color = TeenaColors.Cyan
+                                color = if (uiState.emergencyStopped) TeenaColors.Rose else TeenaColors.Cyan
                             )
                         }
                     },
@@ -183,6 +207,23 @@ fun TeenaAppShell(
                                 imageVector = Icons.Rounded.Menu,
                                 contentDescription = "Open navigation menu",
                                 tint = TeenaColors.TextPrimary
+                            )
+                        }
+                    },
+                    actions = {
+                        IconButton(
+                            onClick = {
+                                if (uiState.emergencyStopped) {
+                                    viewModel.clearEmergencyStop()
+                                } else {
+                                    viewModel.triggerEmergencyStop()
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.StopCircle,
+                                contentDescription = if (uiState.emergencyStopped) "Clear Emergency Stop" else "Emergency Stop",
+                                tint = if (uiState.emergencyStopped) TeenaColors.Amber else TeenaColors.Rose
                             )
                         }
                     },
@@ -235,10 +276,34 @@ fun TeenaAppShell(
                         when (destination) {
                             TeenaDestination.DASHBOARD -> DashboardScreen(
                                 uiState = uiState,
-                                onNavigate = ::navigateTo
+                                onNavigate = ::navigateTo,
+                                onEmergencyStop = viewModel::triggerEmergencyStop,
+                                onClearEmergencyStop = viewModel::clearEmergencyStop
+                            )
+                            TeenaDestination.CHAT -> ChatScreen()
+                            TeenaDestination.LIVE_VOICE -> LiveVoiceScreen()
+                            TeenaDestination.API_MANAGER -> ApiManagerScreen()
+                            TeenaDestination.MEMORY_HISTORY -> MemoryHistoryScreen()
+                            TeenaDestination.PERMISSIONS -> PermissionsScreen(
+                                uiState = uiState,
+                                onRefreshPermissions = viewModel::refreshDevicePermissions,
+                                onOpenAppDetails = { viewModel.openAppDetailsSettings() },
+                                onOpenBatteryOptimization = { viewModel.openBatteryOptimizationSettings() },
+                                onOpenColorOsAutoStart = { viewModel.openColorOsAutoStart() },
+                                onOpenAccessibilitySettings = { viewModel.openAccessibilitySettings() },
+                                onOpenNotificationListenerSettings = { viewModel.openNotificationListenerSettings() }
+                            )
+                            TeenaDestination.SETTINGS -> SettingsScreen(
+                                uiState = uiState,
+                                onEmergencyStop = viewModel::triggerEmergencyStop,
+                                onClearEmergencyStop = viewModel::clearEmergencyStop,
+                                onReopenOnboarding = viewModel::reopenOnboarding,
+                                onOpenPermissions = { navigateTo(TeenaDestination.PERMISSIONS) },
+                                onOpenApiManager = { navigateTo(TeenaDestination.API_MANAGER) },
+                                onOpenBatteryOptimization = { viewModel.openBatteryOptimizationSettings() },
+                                onOpenColorOsAutoStart = { viewModel.openColorOsAutoStart() }
                             )
                             TeenaDestination.ABOUT -> AboutScreen(uiState = uiState)
-                            TeenaDestination.PERMISSIONS -> PermissionsScreen(uiState = uiState)
                             TeenaDestination.APK_BUILD -> ApkBuildScreen(uiState = uiState)
                             else -> SectionStatusScreen(
                                 destination = destination,
