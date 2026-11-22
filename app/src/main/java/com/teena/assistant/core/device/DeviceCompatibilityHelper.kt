@@ -119,9 +119,9 @@ class DeviceCompatibilityHelper @Inject constructor() {
 
     private fun launchSafely(context: Context, intent: Intent): Boolean {
         return runCatching {
-            val resolved = intent.resolveActivity(context.packageManager) ?: return false
+            intent.resolveActivity(context.packageManager) ?: return false
             context.startActivity(intent)
-            resolved != null
+            true
         }.getOrDefault(false)
     }
 }

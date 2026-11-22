@@ -39,7 +39,7 @@ abstract class OpenAiCompatibleProvider(
     private val json: Json
 ) : AiProvider {
 
-    protected abstract var baseUrl: String
+    abstract var baseUrl: String
     protected abstract val modelsPath: String
     protected abstract val chatCompletionsPath: String
 

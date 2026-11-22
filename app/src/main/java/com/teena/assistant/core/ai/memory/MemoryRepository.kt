@@ -8,6 +8,7 @@ import com.teena.assistant.core.ai.registry.ModelRegistry
 import com.teena.assistant.core.data.local.dao.MemoryDao
 import com.teena.assistant.core.data.local.entity.MemoryItemEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import javax.inject.Inject
