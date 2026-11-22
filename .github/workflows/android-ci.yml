@@ -50,14 +50,14 @@ jobs:
           fi
           chmod +x gradlew
 
+      - name: Build Debug APKs
+        run: ./gradlew assembleDebug --stacktrace
+
       - name: Run JVM unit tests
         run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Run Android Lint
         run: ./gradlew lintDebug --stacktrace
-
-      - name: Build Debug APKs
-        run: ./gradlew assembleDebug --stacktrace
 
       - name: Generate Debug APK SHA-256 checksums
         run: |
