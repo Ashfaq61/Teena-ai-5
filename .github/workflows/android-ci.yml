@@ -1,0 +1,172 @@
+name: TEENA AI Android CI & Signed Release
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    name: Test, Lint & Debug Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Run JVM unit tests
+        run: gradle testDebugUnitTest --stacktrace
+
+      - name: Run Android Lint
+        run: gradle lintDebug --stacktrace
+
+      - name: Build Debug APKs
+        run: gradle assembleDebug --stacktrace
+
+      - name: Generate Debug APK SHA-256 checksums
+        run: |
+          mkdir -p dist-debug
+          cp app/build/outputs/apk/debug/*.apk dist-debug/
+          (cd dist-debug && sha256sum *.apk > SHA256SUMS.txt)
+          cat dist-debug/SHA256SUMS.txt
+
+      - name: Upload Unit Test & Lint Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: teena-ai-test-and-lint-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-debug.xml
+          if-no-files-found: warn
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: teena-ai-debug-apk
+          path: dist-debug/*
+
+  signed-release:
+    name: Build Signed Release APK & Publish
+    needs: verify
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+
+    env:
+      TEENA_KEYSTORE_BASE64: ${{ secrets.TEENA_KEYSTORE_BASE64 }}
+      TEENA_KEYSTORE_PASSWORD: ${{ secrets.TEENA_KEYSTORE_PASSWORD }}
+      TEENA_KEY_ALIAS: ${{ secrets.TEENA_KEY_ALIAS }}
+      TEENA_KEY_PASSWORD: ${{ secrets.TEENA_KEY_PASSWORD }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check Release Signing Secrets
+        run: |
+          if [ -z "$TEENA_KEYSTORE_BASE64" ] || [ -z "$TEENA_KEYSTORE_PASSWORD" ] || [ -z "$TEENA_KEY_ALIAS" ] || [ -z "$TEENA_KEY_PASSWORD" ]; then
+            echo "::error::Missing signing secrets (TEENA_KEYSTORE_BASE64, TEENA_KEYSTORE_PASSWORD, TEENA_KEY_ALIAS, TEENA_KEY_PASSWORD)."
+            echo "Generate a fresh keystore in Termux with:"
+            echo "  keytool -genkeypair -v -keystore teena-release.jks -alias teena -keyalg RSA -keysize 4096 -validity 10000"
+            echo "  base64 -w 0 teena-release.jks"
+            echo "Then add TEENA_KEYSTORE_BASE64, TEENA_KEYSTORE_PASSWORD, TEENA_KEY_ALIAS, and TEENA_KEY_PASSWORD to GitHub Repository Secrets and re-run."
+            exit 1
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle 8.11.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Decode Release Keystore
+        run: |
+          echo "$TEENA_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/teena-release.jks"
+          echo "TEENA_KEYSTORE_PATH=$RUNNER_TEMP/teena-release.jks" >> "$GITHUB_ENV"
+
+      - name: Build Signed Release APKs
+        run: gradle assembleRelease --stacktrace
+
+      - name: Verify APK Signatures & Generate SHA-256 Checksums
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          mkdir -p dist-release
+          for apk in app/build/outputs/apk/release/*.apk; do
+            echo "Verifying $apk ..."
+            "$APKSIGNER" verify --verbose --print-certs "$apk"
+            cp "$apk" dist-release/
+          done
+          (cd dist-release && sha256sum *.apk > SHA256SUMS.txt)
+          cat dist-release/SHA256SUMS.txt
+
+      - name: Clean up Keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/teena-release.jks"
+
+      - name: Extract Version Metadata
+        id: meta
+        run: |
+          VERSION_NAME=$(grep 'versionName =' app/build.gradle.kts | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION_CODE=$(grep 'versionCode =' app/build.gradle.kts | head -n 1 | sed -E 's/.*= ([0-9]+).*/\1/')
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "release_tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "release_tag=v${VERSION_NAME}-b${VERSION_CODE}.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload Signed Release APKs Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: teena-ai-signed-release-${{ steps.meta.outputs.release_tag }}
+          path: dist-release/*
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.release_tag }}
+          name: "TEENA AI ${{ steps.meta.outputs.version_name }} (build ${{ steps.meta.outputs.version_code }})"
+          prerelease: true
+          generate_release_notes: true
+          body: |
+            ## TEENA AI Release `${{ steps.meta.outputs.version_name }}` (versionCode `${{ steps.meta.outputs.version_code }}`)
+
+            - **Application ID:** `com.teena.assistant`
+            - **Oppo F15 / arm64 devices:** download `app-arm64-v8a-release.apk` (smallest) or `app-universal-release.apk`.
+            - **First install note:** If an older TEENA build with a different signing key is installed, uninstall it before installing this release.
+
+            ### SHA-256 Checksums
+            Verify against `SHA256SUMS.txt` attached to this release.
+          files: |
+            dist-release/*.apk
+            dist-release/SHA256SUMS.txt

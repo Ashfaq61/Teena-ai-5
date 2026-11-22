@@ -1,0 +1,6 @@
+{
+  "name": "TEENA AI",
+  "description": "TEENA AI — Autonomous Multi-Agent Android AI Assistant with Gemini Live Voice and Automatic Model Detection",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
